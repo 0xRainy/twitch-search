@@ -1,26 +1,18 @@
 use std::env;
 use std::process::exit;
+use std::io;
 
 use chrono::prelude::*;
-use clap::Parser;
 use serde_json::Value;
 
-const ROOT_URL: &str = "https://api.twitch.tv/helix/streams?first=100;game_id=1469308723";
+//TODO: Add a settings file with options for:
+//    - Client ID and OAuth token
+//    - Media player (to use with Streamlink)
+//    - Media player arguments
+//TODO: Add support for writing settings to file with runtime args
+//TODO: Add option to select a stream and open with Streamlink
+//TODO: Refactor game and stream fetching to use a single function
 
-#[derive(Parser, Debug)]
-#[clap(about, version, author)]
-struct Args {
-    /// Term to search for
-    term: String,
-
-    /// Streamers to exclude
-    #[clap(short = 'x', long)]
-    exclude: Option<Vec<String>>,
-
-    /// Search on word boundary
-    #[clap(short, long)]
-    word: bool,
-}
 
 macro_rules! to_str {
     ($val: expr, $key: expr) => {
@@ -45,32 +37,33 @@ fn to_instant(ds: &str) -> String {
 }
 
 #[derive(Debug)]
+struct Games {
+    name: String,
+    id: String,
+}
+
+#[derive(Debug)]
 struct Entry {
     lang: String,
     display_name: String,
     title: String,
+    game_id: String,
     viewer_count: i64,
     live_duration: String,
 }
 
-fn filter(entry: &Entry, word: bool, term: &str, ignored_names: &[String]) -> bool {
-    if ignored_names.contains(&entry.display_name.to_lowercase()) {
+fn filter(entry: &Entry, term: &str, ignored_names: &[&str]) -> bool {
+    let display_name: &str = &entry.display_name.to_lowercase();
+    // 
+    if ignored_names.contains(&display_name) {
         return false;
     }
 
-    if word {
-        for e in entry
-            .title
-            .to_lowercase()
-            .split(|c: char| !c.is_alphabetic()) {
-            if e == term {
-                return true;
-            }
-        }
-        return false;
+    if entry.title.to_lowercase().contains(term) {
+        true
+    } else {
+        false
     }
-
-    entry.title.to_lowercase().contains(term)
 }
 
 fn print(entry: Entry) {
@@ -88,15 +81,17 @@ fn to_entry(value: &mut Value) -> Entry {
         lang: to_str!(value, "language"),
         display_name: to_str!(value, "user_name"),
         title: to_str!(value, "title"),
+        game_id: to_str!(value, "game_id"),
         viewer_count: to_num!(value, "viewer_count"),
         live_duration: to_instant(&to_str!(value, "started_at")),
     }
 }
 
-fn fetch(after: Option<String>) -> (Vec<Entry>, Option<String>) {
+fn fetch(after: Option<String>, id: String) -> (Vec<Entry>, Option<String>) {
+    let root_url = "https://api.twitch.tv/helix/streams?first=100;game_id=".to_owned() + &id;
     let url = match after {
-        Some(after) => format!("{}&after={}", ROOT_URL, after),
-        None => ROOT_URL.to_string(),
+        Some(after) => format!("{}&after={}", (root_url.to_string() + &id), after),
+        None => root_url.to_string(),
     };
 
     let client_id = match env::var("TWITCH_CLIENT_ID") {
@@ -115,28 +110,12 @@ fn fetch(after: Option<String>) -> (Vec<Entry>, Option<String>) {
         }
     };
 
-    // -----------------------------------------------------------------------------
-    //     - Proxy -
-    // -----------------------------------------------------------------------------
-    let proxy = env::var("https_proxy").ok()
-        .and_then(|p| ureq::Proxy::new(p).ok());
-
-    let mut agent = ureq::AgentBuilder::new();
-    if let Some(proxy) = proxy {
-        agent = agent.proxy(proxy);
-    }
-    let agent = agent.build();
-
-    // -----------------------------------------------------------------------------
-    //     - Request -
-    // -----------------------------------------------------------------------------
-    let resp = agent
-        .get(&url)
+    let resp = ureq::get(&url)
         .set("Authorization", &format!("Bearer {}", token))
         .set("Client-Id", &client_id)
         .call();
 
-    let mut json: Value = match resp.unwrap().into_json() {
+    let mut json = match resp.into_json() {
         Ok(j) => j,
         Err(e) => {
             eprintln!("failed to serialize json: {:?}", e);
@@ -152,59 +131,113 @@ fn fetch(after: Option<String>) -> (Vec<Entry>, Option<String>) {
         .map(|v| v.to_string());
 
     let data = match json.get_mut("data") {
-        Some(Value::Array(a)) => a.iter_mut().map(to_entry).collect::<Vec<_>>(),
-        _ => exit(0),
+        Some(Value::Array(a)) => a.into_iter().map(to_entry).collect::<Vec<_>>(),
+        _ => {
+            exit(0);
+        }
     };
 
     (data, pagination)
 }
 
-// -----------------------------------------------------------------------------
-//     - Excluded terms -
-// -----------------------------------------------------------------------------
-fn exclusions(exclude: Option<Vec<String>>) -> Vec<String> {
-    let mut excluded = match exclude {
-        Some(exclusions) => exclusions.iter().map(|x| x.to_lowercase()).collect(),
-        None => vec![],
+fn fetch_games(id: String) -> Vec<Games> {
+    let url = "https://api.twitch.tv/helix/search/categories?query=".to_owned() + &id;
+    let client_id = match env::var("TWITCH_CLIENT_ID") {
+        Ok(cid) => cid,
+        Err(_e) => {
+            eprintln!("Client id missing");
+            exit(1);
+        }
     };
-
-    if let Ok(ignore_list) = env::var("TWITCH_IGNORE") {
-        excluded.extend(ignore_list.split(',').map(str::to_lowercase));
-    }
-
-    excluded
+    let token = match env::var("TWITCH_TOKEN") {
+        Ok(t) => t,
+        Err(_e) => {
+            eprintln!("OAuth token missing");
+            exit(1);
+        }
+    };
+    let resp = ureq::get(&url)
+        .set("Authorization", &format!("Bearer {}", token))
+        .set("Client-Id", &client_id)
+        .call();
+    let mut json = match resp.into_json() {
+        Ok(j) => j,
+        Err(e) => {
+            eprintln!("failed to serialize json: {:?}", e);
+            exit(1);
+        }
+    };
+    let games = match json.get_mut("data") {
+        Some(Value::Array(a)) => a.into_iter().map(|v| {
+            let v = v.take();
+            Games {
+                name: to_str!(v, "name"),
+                id: to_str!(v, "id"),
+            }
+        }).collect::<Vec<_>>(),
+        _ => {
+            exit(0);
+        }
+    };
+    games
 }
 
-// -----------------------------------------------------------------------------
-//     - Main -
-// -----------------------------------------------------------------------------
+//Let the user choose a game
+fn choose_game(games: Vec<Games>) -> String {
+    let mut i = 0;
+    for game in &games {
+        println!("{}: {}", i, game.name);
+        i += 1;
+    }
+    let mut choice = String::new();
+    io::stdin().read_line(&mut choice).unwrap();
+    let choice = choice.trim().parse::<usize>().unwrap();
+    println!("Category: {}", games[choice].name);
+    let search_id = &games[choice].id;
+    search_id.to_string()
+}
+
+//Let the user enter a search term
+fn choose_term() -> String {
+    let mut term = String::new();
+    io::stdin().read_line(&mut term).unwrap();
+    term.trim().to_string()
+}
+
+
 fn main() {
-    let args = Args::parse();
-    let search_term = args.term;
-    let word_boundary = args.word;
+    println!("Enter a game name to search for");
+    let game_term = choose_term();
+    if game_term.is_empty() {
+        println!("A game name is required");
+        exit(1);
+    }
+    let game_choice = &choose_game(fetch_games(game_term));
+    println!("Enter a search term");
+    let search_term = choose_term();
 
-    let exclude = exclusions(args.exclude);
-
-    println!("Searching for \"{}\"", search_term);
+    println!("Searching for \"{}\" in chosen category", search_term);
 
     let mut total = 0;
     let mut found = 0;
 
     let mut page = None;
     loop {
-        let (entries, p) = fetch(page);
+        let (entries, p) = fetch(page, game_choice.to_string());
         total += entries.len();
         page = p;
-        found += entries
+        for entry in entries
             .into_iter()
-            .filter(|e| filter(e, word_boundary, &search_term, &exclude))
-            .map(|e| print(e))
-            .count();
+            .filter(|e| filter(e, &search_term, &[""]))
+            .collect::<Vec<_>>()
+        {
+            print(entry);
+            found += 1;
+        }
 
         if page.is_none() {
             break;
         }
     }
-
     println!("Done ({}/{})", found, total);
 }
