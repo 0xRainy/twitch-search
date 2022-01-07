@@ -1,19 +1,23 @@
-# Show list of people currently streaming Rust dev
-
-Prints a list of live streams from "science and technology" that has the search
-term in the title.
-
+# Search Twitch.tv streams and show a list in the terminal
 
 Usage: 
 
 ```
-# Searching gamedev
-stream-search gamedev
+# Category search
+Enter a term and choose a result from the returned list of categories
 
-# Searchign for rust (no search term falls back to "rust")
-stream-search
+
+# Stream search
+Enter a term to search stream titles in the chosen category
 ```
 
 *Note:* requires two env vars set to a valid OAuth token and client id:
-* `TWITCH_TOKEN`
 * `TWITCH_CLIENT_ID`
+    To get a client ID register an app (this app) here:
+    https://dev.twitch.tv/console/apps/create
+    OAuth Redirect URLs can be set to https://localhost
+* `TWITCH_TOKEN`
+    To get an app OAuth token run:
+    * `curl -X POST https://id.twitch.tv/oauth2/token?client_id=<your client
+        ID>&client_secret=<your client
+        secret>&grant_type=client_credentials&scope=[]`

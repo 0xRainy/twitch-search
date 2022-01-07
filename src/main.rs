@@ -115,7 +115,7 @@ fn fetch(after: Option<String>, id: String) -> (Vec<Entry>, Option<String>) {
         .set("Client-Id", &client_id)
         .call();
 
-    let mut json = match resp.into_json() {
+    let mut json: Value = match resp.unwrap().into_json() {
         Ok(j) => j,
         Err(e) => {
             eprintln!("failed to serialize json: {:?}", e);
@@ -140,7 +140,7 @@ fn fetch(after: Option<String>, id: String) -> (Vec<Entry>, Option<String>) {
     (data, pagination)
 }
 
-fn fetch_games(id: String) -> Vec<Games> {
+fn fetch_categories(id: String) -> Vec<Games> {
     let url = "https://api.twitch.tv/helix/search/categories?query=".to_owned() + &id;
     let client_id = match env::var("TWITCH_CLIENT_ID") {
         Ok(cid) => cid,
@@ -160,7 +160,7 @@ fn fetch_games(id: String) -> Vec<Games> {
         .set("Authorization", &format!("Bearer {}", token))
         .set("Client-Id", &client_id)
         .call();
-    let mut json = match resp.into_json() {
+    let mut json: Value = match resp.unwrap().into_json() {
         Ok(j) => j,
         Err(e) => {
             eprintln!("failed to serialize json: {:?}", e);
@@ -206,13 +206,13 @@ fn choose_term() -> String {
 
 
 fn main() {
-    println!("Enter a game name to search for");
-    let game_term = choose_term();
-    if game_term.is_empty() {
-        println!("A game name is required");
+    println!("Enter a category name to search for");
+    let category_term = choose_term();
+    if category_term.is_empty() {
+        println!("A category name is required");
         exit(1);
     }
-    let game_choice = &choose_game(fetch_games(game_term));
+    let game_choice = &choose_game(fetch_categories(category_term));
     println!("Enter a search term");
     let search_term = choose_term();
 
