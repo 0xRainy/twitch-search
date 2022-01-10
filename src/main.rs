@@ -87,15 +87,9 @@ fn to_entry(value: &mut Value) -> Entry {
     }
 }
 
-fn fetch(after: Option<String>, id: String) -> (Vec<Entry>, Option<String>) {
-    let root_url = "https://api.twitch.tv/helix/streams?first=100;game_id=".to_owned() + &id;
-    let url = match after {
-        Some(after) => format!("{}&after={}", (root_url.to_string() + &id), after),
-        None => root_url.to_string(),
-    };
-
+fn credientials() -> (String, String) {
     let client_id = match env::var("TWITCH_CLIENT_ID") {
-        Ok(cid) => cid,
+        Ok(val) => val,
         Err(_e) => {
             eprintln!("Client id missing");
             exit(1);
@@ -103,16 +97,26 @@ fn fetch(after: Option<String>, id: String) -> (Vec<Entry>, Option<String>) {
     };
 
     let token = match env::var("TWITCH_TOKEN") {
-        Ok(t) => t,
+        Ok(val) => val,
         Err(_e) => {
             eprintln!("OAuth token missing");
             exit(1);
         }
     };
+    (client_id, token)
+}
+
+fn fetch(after: Option<String>, id: String) -> (Vec<Entry>, Option<String>) {
+    let url = "https://api.twitch.tv/helix/streams?first=100;game_id=".to_owned() + &id;
+
+    let url = match after {
+        Some(after) => format!("{}&after={}", (url.to_string() + &id), after),
+        None => url.to_string(),
+    };
 
     let resp = ureq::get(&url)
-        .set("Authorization", &format!("Bearer {}", token))
-        .set("Client-Id", &client_id)
+        .set("Authorization", &format!("Bearer {}", credientials().1))
+        .set("Client-Id", credientials().0.as_str())
         .call();
 
     let mut json: Value = match resp.unwrap().into_json() {
@@ -142,24 +146,12 @@ fn fetch(after: Option<String>, id: String) -> (Vec<Entry>, Option<String>) {
 
 fn fetch_categories(id: String) -> Vec<Games> {
     let url = "https://api.twitch.tv/helix/search/categories?query=".to_owned() + &id;
-    let client_id = match env::var("TWITCH_CLIENT_ID") {
-        Ok(cid) => cid,
-        Err(_e) => {
-            eprintln!("Client id missing");
-            exit(1);
-        }
-    };
-    let token = match env::var("TWITCH_TOKEN") {
-        Ok(t) => t,
-        Err(_e) => {
-            eprintln!("OAuth token missing");
-            exit(1);
-        }
-    };
+
     let resp = ureq::get(&url)
-        .set("Authorization", &format!("Bearer {}", token))
-        .set("Client-Id", &client_id)
+        .set("Authorization", &format!("Bearer {}", credientials().1))
+        .set("Client-Id", credientials().0.as_str())
         .call();
+
     let mut json: Value = match resp.unwrap().into_json() {
         Ok(j) => j,
         Err(e) => {
@@ -167,6 +159,7 @@ fn fetch_categories(id: String) -> Vec<Games> {
             exit(1);
         }
     };
+
     let games = match json.get_mut("data") {
         Some(Value::Array(a)) => a.into_iter().map(|v| {
             let v = v.take();
@@ -190,7 +183,15 @@ fn choose_game(games: Vec<Games>) -> String {
         i += 1;
     }
     let mut choice = String::new();
-    io::stdin().read_line(&mut choice).unwrap();
+    loop {
+        io::stdin().read_line(&mut choice).unwrap();
+        if (0..i).contains(&choice.trim().parse::<usize>().unwrap()) {
+            break;
+        } else {
+            println!("Invalid choice");
+            choice.clear();
+        }
+    }
     let choice = choice.trim().parse::<usize>().unwrap();
     println!("Category: {}", games[choice].name);
     let search_id = &games[choice].id;
