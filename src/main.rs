@@ -1,6 +1,7 @@
 use std::env;
 use std::process::exit;
 use std::io;
+use std::time::Instant;
 
 use chrono::prelude::*;
 use serde_json::Value;
@@ -12,7 +13,6 @@ use serde_json::Value;
 //TODO: Add support for writing settings to file with runtime args
 //TODO: Add option to select a stream and open with Streamlink
 //TODO: Refactor game and stream fetching to use a single function
-
 
 macro_rules! to_str {
     ($val: expr, $key: expr) => {
@@ -54,7 +54,6 @@ struct Entry {
 
 fn filter(entry: &Entry, term: &str, ignored_names: &[&str]) -> bool {
     let display_name: &str = &entry.display_name.to_lowercase();
-    // 
     if ignored_names.contains(&display_name) {
         return false;
     }
@@ -107,7 +106,6 @@ fn credientials() -> (String, String) {
 }
 
 fn fetch(after: Option<String>, url: String) -> (Value, Option<String>) {
-
     let url = match after {
         Some(after) => format!("{}&after={}", url.to_string(), after),
         None => url.to_string(),
@@ -138,7 +136,7 @@ fn fetch(after: Option<String>, url: String) -> (Value, Option<String>) {
 }
 
 fn fetch_categories(term: String) -> Vec<Games> {
-    let mut url = String::new();
+    let url;
     if term.is_empty() {
         url = "https://api.twitch.tv/helix/games/top".to_string();
     } else {
@@ -217,6 +215,7 @@ fn main() {
     let mut found = 0;
 
     let mut page = None;
+    let start_time = Instant::now();
     loop {
         let (entries, p) = fetch_streams(page, game_choice.to_string());
         total += entries.len();
@@ -234,5 +233,6 @@ fn main() {
             break;
         }
     }
-    println!("Done ({}/{})", found, total);
+    let duration = start_time.elapsed();
+    println!("Done ({}/{} streams in {}.{} seconds)", found, total, duration.as_secs(), duration.subsec_nanos() as f64 / 1e+6);
 }
