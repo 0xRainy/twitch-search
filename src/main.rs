@@ -230,7 +230,7 @@ fn main() {
             found += 1;
         }
 
-        if page.is_none() || found == 100 {
+        if page.is_none() {
             break;
         }
     }
