@@ -106,11 +106,10 @@ fn credientials() -> (String, String) {
     (client_id, token)
 }
 
-fn fetch(after: Option<String>, id: String) -> (Vec<Entry>, Option<String>) {
-    let url = "https://api.twitch.tv/helix/streams?first=100;game_id=".to_owned() + &id;
+fn fetch(after: Option<String>, url: String) -> (Value, Option<String>) {
 
     let url = match after {
-        Some(after) => format!("{}&after={}", (url.to_string() + &id), after),
+        Some(after) => format!("{}&after={}", url.to_string(), after),
         None => url.to_string(),
     };
 
@@ -134,32 +133,18 @@ fn fetch(after: Option<String>, id: String) -> (Vec<Entry>, Option<String>) {
         .and_then(|v| v.as_str())
         .map(|v| v.to_string());
 
-    let data = match json.get_mut("data") {
-        Some(Value::Array(a)) => a.into_iter().map(to_entry).collect::<Vec<_>>(),
-        _ => {
-            exit(0);
-        }
-    };
 
-    (data, pagination)
+    (json, pagination)
 }
 
-fn fetch_categories(id: String) -> Vec<Games> {
-    let url = "https://api.twitch.tv/helix/search/categories?query=".to_owned() + &id;
-
-    let resp = ureq::get(&url)
-        .set("Authorization", &format!("Bearer {}", credientials().1))
-        .set("Client-Id", credientials().0.as_str())
-        .call();
-
-    let mut json: Value = match resp.unwrap().into_json() {
-        Ok(j) => j,
-        Err(e) => {
-            eprintln!("failed to serialize json: {:?}", e);
-            exit(1);
-        }
-    };
-
+fn fetch_categories(term: String) -> Vec<Games> {
+    let mut url = String::new();
+    if term.is_empty() {
+        url = "https://api.twitch.tv/helix/games/top".to_string();
+    } else {
+        url = "https://api.twitch.tv/helix/search/categories?query=".to_owned() + &term;
+    }
+    let mut json = fetch(None, url).0;
     let games = match json.get_mut("data") {
         Some(Value::Array(a)) => a.into_iter().map(|v| {
             let v = v.take();
@@ -175,6 +160,19 @@ fn fetch_categories(id: String) -> Vec<Games> {
     games
 }
 
+fn fetch_streams(after: Option<String>, id: String) -> (Vec<Entry>, Option<String>) {
+    let url = "https://api.twitch.tv/helix/streams?first=100;game_id=".to_owned() + &id;
+    let mut json = fetch(after, url);
+    let streams = match json.0.get_mut("data") {
+        Some(Value::Array(a)) => a.into_iter().map(to_entry).collect::<Vec<_>>(),
+        _ => {
+            exit(0);
+        }
+    };
+    let pages = json.1;
+    (streams, pages)
+}
+
 //Let the user choose a game
 fn choose_game(games: Vec<Games>) -> String {
     let mut i = 0;
@@ -185,7 +183,7 @@ fn choose_game(games: Vec<Games>) -> String {
     let mut choice = String::new();
     loop {
         io::stdin().read_line(&mut choice).unwrap();
-        if (0..i).contains(&choice.trim().parse::<usize>().unwrap()) {
+        if (0..i).contains(&choice.trim().parse::<usize>().expect("Input must be a number")) {
             break;
         } else {
             println!("Invalid choice");
@@ -207,12 +205,8 @@ fn choose_term() -> String {
 
 
 fn main() {
-    println!("Enter a category name to search for");
+    println!("Enter a category name to search for, or leave blank to list top categories");
     let category_term = choose_term();
-    if category_term.is_empty() {
-        println!("A category name is required");
-        exit(1);
-    }
     let game_choice = &choose_game(fetch_categories(category_term));
     println!("Enter a search term");
     let search_term = choose_term();
@@ -224,7 +218,7 @@ fn main() {
 
     let mut page = None;
     loop {
-        let (entries, p) = fetch(page, game_choice.to_string());
+        let (entries, p) = fetch_streams(page, game_choice.to_string());
         total += entries.len();
         page = p;
         for entry in entries
@@ -236,7 +230,7 @@ fn main() {
             found += 1;
         }
 
-        if page.is_none() {
+        if page.is_none() || found == 100 {
             break;
         }
     }
