@@ -1,6 +1,6 @@
 use std::env;
-use std::process::exit;
 use std::io;
+use std::process::exit;
 use std::time::Instant;
 
 use chrono::prelude::*;
@@ -130,7 +130,6 @@ fn fetch(after: Option<String>, url: String) -> (Value, Option<String>) {
         .and_then(|v| v.as_str())
         .map(|v| v.to_string());
 
-
     (json, pagination)
 }
 
@@ -143,13 +142,16 @@ fn fetch_categories(term: String) -> Vec<Games> {
     }
     let mut json = fetch(None, url).0;
     let games = match json.get_mut("data") {
-        Some(Value::Array(a)) => a.into_iter().map(|v| {
-            let v = v.take();
-            Games {
-                name: to_str!(v, "name"),
-                id: to_str!(v, "id"),
-            }
-        }).collect::<Vec<_>>(),
+        Some(Value::Array(a)) => a
+            .into_iter()
+            .map(|v| {
+                let v = v.take();
+                Games {
+                    name: to_str!(v, "name"),
+                    id: to_str!(v, "id"),
+                }
+            })
+            .collect::<Vec<_>>(),
         _ => {
             exit(0);
         }
@@ -177,6 +179,7 @@ fn choose_game(games: Vec<Games>) -> String {
         println!("{}: {}", i, game.name);
         i += 1;
     }
+    println!("Choose a category from the list:");
     let mut choice = String::new();
     loop {
         choice.clear();
@@ -184,12 +187,12 @@ fn choose_game(games: Vec<Games>) -> String {
         let choice: usize = match choice.trim().parse() {
             Ok(val) => val,
             Err(_e) => {
-                println!("Please enter a number");
+                println!("Please enter a number:");
                 continue;
             }
         };
         if choice >= games.len() {
-            println!("Please enter a number between 0 and {}", games.len() - 1);
+            println!("Please enter a number between 0 and {}:", games.len() - 1);
             continue;
         } else {
             break;
@@ -209,13 +212,13 @@ fn choose_term() -> String {
 }
 
 fn main() {
-    println!("Enter a category name to search for, or leave blank to list top categories");
+    println!("Enter a category name to search for, or leave blank to list top categories:");
     let category_term = choose_term();
     let game_choice = &choose_game(fetch_categories(category_term));
-    println!("Enter a search term");
+    println!("Enter a search term:");
     let search_term = choose_term();
 
-    println!("Searching for \"{}\" in chosen category", search_term);
+    println!("Searching for \"{}\" in chosen category...", search_term);
 
     let mut total = 0;
     let mut found = 0;
@@ -240,5 +243,11 @@ fn main() {
         }
     }
     let duration = start_time.elapsed();
-    println!("Done ({}/{} streams in {}.{} seconds)", found, total, duration.as_secs(), (duration.subsec_nanos() as f64 / 1e+7) as u32);
+    println!(
+        "Done! Found {}/{} streams in {}.{} seconds.",
+        found,
+        total,
+        duration.as_secs(),
+        (duration.subsec_nanos() as f64 / 1e+7) as u32
+    );
 }
