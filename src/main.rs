@@ -12,7 +12,6 @@ use serde_json::Value;
 //    - Media player arguments
 //TODO: Add support for writing settings to file with runtime args
 //TODO: Add option to select a stream and open with Streamlink
-//TODO: Refactor game and stream fetching to use a single function
 
 macro_rules! to_str {
     ($val: expr, $key: expr) => {
@@ -86,7 +85,7 @@ fn to_entry(value: &mut Value) -> Entry {
     }
 }
 
-fn credientials() -> (String, String) {
+fn credentials() -> (String, String) {
     let client_id = match env::var("TWITCH_CLIENT_ID") {
         Ok(val) => val,
         Err(_e) => {
@@ -112,8 +111,8 @@ fn fetch(after: Option<String>, url: String) -> (Value, Option<String>) {
     };
 
     let resp = ureq::get(&url)
-        .set("Authorization", &format!("Bearer {}", credientials().1))
-        .set("Client-Id", credientials().0.as_str())
+        .set("Authorization", &format!("Bearer {}", credentials().1))
+        .set("Client-Id", credentials().0.as_str())
         .call();
 
     let mut json: Value = match resp.unwrap().into_json() {
@@ -180,12 +179,20 @@ fn choose_game(games: Vec<Games>) -> String {
     }
     let mut choice = String::new();
     loop {
+        choice.clear();
         io::stdin().read_line(&mut choice).unwrap();
-        if (0..i).contains(&choice.trim().parse::<usize>().expect("Input must be a number")) {
-            break;
+        let choice: usize = match choice.trim().parse() {
+            Ok(val) => val,
+            Err(_e) => {
+                println!("Please enter a number");
+                continue;
+            }
+        };
+        if choice >= games.len() {
+            println!("Please enter a number between 0 and {}", games.len() - 1);
+            continue;
         } else {
-            println!("Invalid choice");
-            choice.clear();
+            break;
         }
     }
     let choice = choice.trim().parse::<usize>().unwrap();
@@ -200,7 +207,6 @@ fn choose_term() -> String {
     io::stdin().read_line(&mut term).unwrap();
     term.trim().to_string()
 }
-
 
 fn main() {
     println!("Enter a category name to search for, or leave blank to list top categories");
@@ -234,5 +240,5 @@ fn main() {
         }
     }
     let duration = start_time.elapsed();
-    println!("Done ({}/{} streams in {}.{} seconds)", found, total, duration.as_secs(), duration.subsec_nanos() as f64 / 1e+6);
+    println!("Done ({}/{} streams in {}.{} seconds)", found, total, duration.as_secs(), (duration.subsec_nanos() as f64 / 1e+7) as u32);
 }
