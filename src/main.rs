@@ -160,7 +160,7 @@ fn fetch_categories(term: String) -> Vec<Games> {
 }
 
 fn fetch_streams(after: Option<String>, id: String) -> (Vec<Entry>, Option<String>) {
-    let url = "https://api.twitch.tv/helix/streams?first=100;game_id=".to_owned() + &id;
+    let url = "https://api.twitch.tv/helix/streams?first=100&game_id=".to_owned() + &id;
     let mut json = fetch(after, url);
     let streams = match json.0.get_mut("data") {
         Some(Value::Array(a)) => a.into_iter().map(to_entry).collect::<Vec<_>>(),
