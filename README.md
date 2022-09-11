@@ -18,6 +18,6 @@ Enter a term to search stream titles in the chosen category
     OAuth Redirect URLs can be set to https://localhost
 * `TWITCH_TOKEN`
     To get an app OAuth token run:
-    * `curl -X POST https://id.twitch.tv/oauth2/token?client_id=<your client
-        ID>&client_secret=<your client
-        secret>&grant_type=client_credentials&scope=[]`
+    * curl -X POST 'https://id.twitch.tv/oauth2/token' \
+-H 'Content-Type: application/x-www-form-urlencoded' \
+-d 'client_id=<your client id goes here>&client_secret=<your client secret goes here>&grant_type=client_credentials'
