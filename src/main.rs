@@ -49,6 +49,8 @@ struct Entry {
     game_id: String,
     viewer_count: i64,
     live_duration: String,
+    user_id: String,
+    tags: String,
 }
 
 fn filter(entry: &Entry, term: &str, ignored_names: &[&str]) -> bool {
@@ -65,6 +67,13 @@ fn filter(entry: &Entry, term: &str, ignored_names: &[&str]) -> bool {
 }
 
 fn print(entry: Entry) {
+    if !entry.tags.is_empty() {
+        print!("{} tags | ", entry.tags.trim_matches(|c| c == '[' || c == ']')
+            .replace(|c| c == '"', "")
+            .replace(|c| c == ',', ", "));
+    } else {
+        print!("");
+    };
     print!("{} | ", entry.lang);
     print!("https://twitch.tv/{:<14} | ", entry.display_name);
     print!("{:>4} viewers | ", entry.viewer_count);
@@ -73,7 +82,7 @@ fn print(entry: Entry) {
 }
 
 fn to_entry(value: &mut Value) -> Entry {
-    let value = value.take();
+    let mut value = value.take();
 
     Entry {
         lang: to_str!(value, "language"),
@@ -82,6 +91,8 @@ fn to_entry(value: &mut Value) -> Entry {
         game_id: to_str!(value, "game_id"),
         viewer_count: to_num!(value, "viewer_count"),
         live_duration: to_instant(&to_str!(value, "started_at")),
+        user_id: to_str!(value, "id"),
+        tags: value.take().get("tags").unwrap().to_string(),
     }
 }
 
